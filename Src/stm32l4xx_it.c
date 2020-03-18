@@ -48,7 +48,7 @@
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN PFP */
 extern void FMC_SW_IRQHandler(void);
-extern void MySysTick_IRQHandler(void);
+extern void mySysTick_IRQHandler(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/

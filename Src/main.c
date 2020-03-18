@@ -78,8 +78,9 @@ WWDG_HandleTypeDef hwwdg;
 /* USER CODE BEGIN PV */
 
 //global flag to
-int swInterruptFlag = 0;
-int swSysTickEventFlag = 0;
+int mySwInterruptFlag = 0;
+int mySysTickEventFlag = 0;
+int myTim3EventFlag = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -113,7 +114,7 @@ void USART1_IRQHandler(void)
 
 void FMC_SW_IRQHandler(void)
 {
-    swInterruptFlag = 1;
+    mySwInterruptFlag = 1;
 }
 
 void logMsg(UART_HandleTypeDef *huart, char _out[])
@@ -133,7 +134,7 @@ uint8_t logGetMsg(UART_HandleTypeDef *huart)
     return (rxChar);
 }
 
-// myDelay1 method
+// myDelay1 method - IWDG safe
 void myDelay1(uint32_t val)
 {
     TIM2->CR1 = 1;
@@ -157,10 +158,10 @@ void myDelay1(uint32_t val)
 // called by SysTick_Handler()
 void mySysTick_IRQHandler(void)
 {
-    swSysTickEventFlag = 1;
+    mySysTickEventFlag = 1;
 }
 
-// myDelay2 method
+// myDelay2 method - IWDG safe
 void myDelay2(uint32_t val)
 {
     //SysTick_LOAD = (SysTick_Interrupt_Period * SysTick_Counter_Clock_Frequency) - 1
@@ -172,16 +173,25 @@ void myDelay2(uint32_t val)
         //mySysTick_IRQHandler() sets swSysTickEventFlag each time SysTick_Handler() is called
 
         //wait until swSysTickEventFlag changes
-        while(!swSysTickEventFlag) {}
+        while(!mySysTickEventFlag) {}
 
         //reset swSysTickEventFlag
-        swSysTickEventFlag = 0;
+        mySysTickEventFlag = 0;
 
         //pet the IWDG timer
         HAL_IWDG_Refresh(&hiwdg);
 
         val --;
     }
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if(htim == &htim3)
+    {
+        myTim3EventFlag = 1;
+    }
+
 }
 
 /* USER CODE END 0 */
@@ -220,7 +230,7 @@ int main(void)
   MX_GPIO_Init();
   MX_DFSDM1_Init();
   MX_I2C2_Init();
-//  MX_IWDG_Init();
+  MX_IWDG_Init();
   MX_QUADSPI_Init();
 //  MX_RTC_Init();
   MX_SPI3_Init();
@@ -234,9 +244,13 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_NVIC_SetPriority(FMC_IRQn, 15, 0);
   HAL_NVIC_EnableIRQ(FMC_IRQn);
-
+  
   //create a null terminated string of a single character
   char tempChar[1];
+  //create a null terminated string
+  char tempStr[80];
+  //timer 3 1 second counter
+  int tim3Cntr=0;
   //print start up banner to the terminal
   logMsg(&huart1, "\n\n\n\r\n");
   logMsg(&huart1, "Welcome to <Embedded Controller Programming for Real-Time Systems> \r\n");
@@ -257,21 +271,22 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-      //test to se if the SW interrupt flag has been triggered
-      if(swInterruptFlag)
+      //test to see if the SW interrupt flag has been triggered
+      if(mySwInterruptFlag)
       {
           //print message
           logMsg(&huart1, "\r\n>>> SW Interrupt Detected <<<\r\n\r\n");
           //clear the flag
-          swInterruptFlag=0;
+          mySwInterruptFlag=0;
       }
+
 
       //reprint the menu each time a character is processed
       logMsg(&huart1, "\n\r\n");
       logMsg(&huart1, "\r\n                   Main Menu \r\n");
       logMsg(&huart1, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ \r\n");
-      logMsg(&huart1, "Enter g - Toggle the Green LED \r\n");
-      logMsg(&huart1, "Enter b - Toggle the Blue LED \r\n");
+      logMsg(&huart1, "Enter g - Toggle the Green LED after 1 one second delay\r\n");
+      logMsg(&huart1, "Enter b - Toggle the Blue LED after 1 one second delay\r\n");
       logMsg(&huart1, "Enter s - Generate a SW interrupt \r\n");
       logMsg(&huart1, "Enter t - Start timer3  \r\n");
       logMsg(&huart1, "Enter w - Enable a 1 second delay to trigger the WDT \r\n");
@@ -281,6 +296,26 @@ int main(void)
       {
           //pet the IWDG timer
           HAL_IWDG_Refresh(&hiwdg);
+
+          //test to see if the SW interrupt flag has been triggered
+          if(myTim3EventFlag)
+          {
+              //increment
+              tim3Cntr++;
+              //clear the flag
+              myTim3EventFlag=0;
+
+              sprintf(tempStr, "Total timer3 events counted = %d\r\n", tim3Cntr);
+              logMsg(&huart1, tempStr);
+              if(tim3Cntr==10)
+              {
+                  //Stop timer 3
+                  HAL_TIM_Base_Stop_IT(&htim3);
+                  //reset tim3Cntr
+                  tim3Cntr = 0;
+                  logMsg(&huart1, "\r\nTimer 3 Test Complete\r\n");
+              }
+          }
       }
 
       //get the character that was input to the terminal
@@ -311,10 +346,12 @@ int main(void)
             case('s'):  //Generate a SW interrupt
                         NVIC->STIR = FMC_IRQn;
                         break;
-            case('t'):  //Start timer3
-
+            case('t'):  //Start timer 3
+                        logMsg(&huart1, "\r\nStarting Timer 3 Test\r\n");
+                        HAL_TIM_Base_Start_IT(&htim3);
                         break;
             case('w'):  //Enable 1 second delay to trigger the IWDG
+                        logMsg(&huart1, "\r\nStarting IWDG Test\r\n");
                         //First toggle GPIO at CN1pin1, on the IoT board
                         //This is done so that I can observe the timing of the watchdog timeout using an O'Scope.
                         HAL_GPIO_TogglePin(TIMER_TRACE_Port, TIMER_TRACE_Pin);
@@ -690,9 +727,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 0;
+  htim3.Init.Prescaler = 1000;
   htim3.Init.CounterMode = TIM_COUNTERMODE_DOWN;                //change default to count down
-  htim3.Init.Period = 0;
+  htim3.Init.Period = 32000;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
