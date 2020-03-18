@@ -79,7 +79,7 @@ WWDG_HandleTypeDef hwwdg;
 
 //global flag to
 int swInterruptFlag = 0;
-
+int swSysTickEventFlag = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -119,6 +119,47 @@ uint8_t logGetMsg(UART_HandleTypeDef *huart)
     uint8_t rxChar;
     HAL_UART_Receive_IT(&huart1, &rxChar, sizeof(uint8_t));
     return (rxChar);
+}
+
+// myDelay1 method
+void myDelay1(uint32_t val)
+{
+    while (val != 0)
+    {
+        // Program TIM2 for a 1msec delay
+
+        //wait for SR
+        while(!(TIM2->SR & 1)) {}
+
+        //placing the IWDG refresh here will force a WDT event if the timer is not configured correctly
+        //pet the IWDG timer
+        HAL_IWDG_Refresh(&hiwdg);
+
+        val --;
+    }
+}
+
+// myDelay2 method
+void myDelay2(uint32_t val)
+{
+    //last_swSysTickEventFlag keep track of the last swSysTickEventFlag value
+    int last_swSysTickEventFlag = 0;
+    while (val != 0)
+    {
+        // SysTick already programmed for a 1msec delay
+        // Added MY_SYSTICK_IRQHandler() in SysTick_Handler()
+
+        //wait until swSysTickEventFlag changes
+        while(last_swSysTickEventFlag == swSysTickEventFlag) {}
+
+        //set last_swSysTickEventFlag to current swSysTickEventFlag value - this re-arms the trigger above
+        last_swSysTickEventFlag = swSysTickEventFlag;
+
+        //pet the IWDG timer
+        HAL_IWDG_Refresh(&hiwdg);
+
+        val --;
+    }
 }
 
 /* USER CODE END 0 */
@@ -234,6 +275,10 @@ int main(void)
                         logMsg(&huart1, "Toggle Green LED \r\n");
                         break;
             case('b'):  //Toggle blue LED
+                        //First toggle GPIO at CN1pin1, on the IoT board
+                        //This is done so that I can observe the timing of myDelay2 using an O'Scope.
+                        HAL_GPIO_TogglePin(TIMER_TRACE_Port, TIMER_TRACE_Pin);
+                        myDelay2(1000);
                         HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin);
                         logMsg(&huart1, "Toggle Blue LED \r\n");
                         break;
@@ -998,6 +1043,12 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void MY_SYSTICK_IRQHandler(void)
+{
+    //simple toggle
+    swSysTickEventFlag = swSysTickEventFlag ? 0 : 1;
+}
 
 // generic USART handler
 void USART1_IRQHandler(void)
