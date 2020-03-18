@@ -194,11 +194,16 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+      //test to se if the SW interrupt flag has been triggered
       if(swInterruptFlag)
       {
+          //print message
           logMsg(&huart1, "\r\n>>> SW Interrupt Detected <<<\r\n\r\n");
+          //clear the flag
           swInterruptFlag=0;
       }
+
+      //reprint the menu each time a character is processed
       logMsg(&huart1, "\n\r\n");
       logMsg(&huart1, "\r\n                   Main Menu \r\n");
       logMsg(&huart1, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ \r\n");
@@ -220,6 +225,7 @@ int main(void)
       logMsg(&huart1, "\n\r\nreceived character = ");
       logMsg(&huart1, tempChar);
       logMsg(&huart1, " \r\n");
+
       //process character
       switch(tempChar[0])
       {
