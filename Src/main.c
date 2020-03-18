@@ -124,18 +124,20 @@ uint8_t logGetMsg(UART_HandleTypeDef *huart)
 // myDelay1 method
 void myDelay1(uint32_t val)
 {
+    TIM2->CR1 = 1;
+    TIM2->ARR = 32768;
+    TIM2->CCR1 = 1;
     while (val != 0)
     {
-        // Program TIM2 for a 1msec delay
-
         //wait for SR
-        while(!(TIM2->SR & 1)) {}
+        while(!(TIM2-> SR & 1)) {}
 
         //placing the IWDG refresh here will force a WDT event if the timer is not configured correctly
         //pet the IWDG timer
         HAL_IWDG_Refresh(&hiwdg);
 
         val --;
+        TIM2->SR &= ~1;
     }
 }
 
@@ -144,9 +146,12 @@ void myDelay2(uint32_t val)
 {
     //last_swSysTickEventFlag keep track of the last swSysTickEventFlag value
     int last_swSysTickEventFlag = 0;
+
+    //SysTick_LOAD = (SysTick_Interrupt_Period * SysTick_Counter_Clock_Frequency) - 1
+    SysTick->LOAD = (SystemCoreClock * 1E-3) - 1;
+
     while (val != 0)
     {
-        // SysTick already programmed for a 1msec delay
         // Added MY_SYSTICK_IRQHandler() in SysTick_Handler()
 
         //wait until swSysTickEventFlag changes
@@ -198,7 +203,7 @@ int main(void)
   MX_GPIO_Init();
   MX_DFSDM1_Init();
   MX_I2C2_Init();
-  MX_IWDG_Init();
+//  MX_IWDG_Init();
   MX_QUADSPI_Init();
 //  MX_RTC_Init();
   MX_SPI3_Init();
@@ -271,6 +276,10 @@ int main(void)
       switch(tempChar[0])
       {
             case('g'):  //Toggle Green LED
+                        //First toggle GPIO at CN1pin1, on the IoT board
+                        //This is done so that I can observe the timing of myDelay2 using an O'Scope.
+                        HAL_GPIO_TogglePin(TIMER_TRACE_Port, TIMER_TRACE_Pin);
+                        myDelay1(1000);
                         HAL_GPIO_TogglePin(GRN_LED_GPIO_Port, GRN_LED_Pin);
                         logMsg(&huart1, "Toggle Green LED \r\n");
                         break;
@@ -619,8 +628,8 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 0;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Prescaler = 1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_DOWN;
   htim2.Init.Period = 0;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
