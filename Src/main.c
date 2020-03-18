@@ -104,6 +104,18 @@ static void MX_WWDG_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+// generic USART handler
+void USART1_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&huart1);
+}
+
+void FMC_SW_IRQHandler(void)
+{
+    swInterruptFlag = 1;
+}
+
 void logMsg(UART_HandleTypeDef *huart, char _out[])
 {
     //Use STM32L4xx_HAL_Driver for UART TX
@@ -125,7 +137,7 @@ uint8_t logGetMsg(UART_HandleTypeDef *huart)
 void myDelay1(uint32_t val)
 {
     TIM2->CR1 = 1;
-    TIM2->ARR = 32768;
+    TIM2->ARR = 32000;
     TIM2->CCR1 = 1;
     while (val != 0)
     {
@@ -137,28 +149,33 @@ void myDelay1(uint32_t val)
         HAL_IWDG_Refresh(&hiwdg);
 
         val --;
+        //clear the status bit
         TIM2->SR &= ~1;
     }
+}
+
+// called by SysTick_Handler()
+void mySysTick_IRQHandler(void)
+{
+    swSysTickEventFlag = 1;
 }
 
 // myDelay2 method
 void myDelay2(uint32_t val)
 {
-    //last_swSysTickEventFlag keep track of the last swSysTickEventFlag value
-    int last_swSysTickEventFlag = 0;
-
     //SysTick_LOAD = (SysTick_Interrupt_Period * SysTick_Counter_Clock_Frequency) - 1
-    SysTick->LOAD = (SystemCoreClock * 1E-3) - 1;
+    SysTick->LOAD = (1E-3 * SystemCoreClock) - 1;
 
     while (val != 0)
     {
-        // Added MY_SYSTICK_IRQHandler() in SysTick_Handler()
+        //Added mySysTick_IRQHandler() in SysTick_Handler()
+        //mySysTick_IRQHandler() sets swSysTickEventFlag each time SysTick_Handler() is called
 
         //wait until swSysTickEventFlag changes
-        while(last_swSysTickEventFlag == swSysTickEventFlag) {}
+        while(!swSysTickEventFlag) {}
 
-        //set last_swSysTickEventFlag to current swSysTickEventFlag value - this re-arms the trigger above
-        last_swSysTickEventFlag = swSysTickEventFlag;
+        //reset swSysTickEventFlag
+        swSysTickEventFlag = 0;
 
         //pet the IWDG timer
         HAL_IWDG_Refresh(&hiwdg);
@@ -674,7 +691,7 @@ static void MX_TIM3_Init(void)
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 0;
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_DOWN;                //change default to count down
   htim3.Init.Period = 0;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -682,7 +699,7 @@ static void MX_TIM3_Init(void)
   {
     Error_Handler();
   }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;    //Selected clock is LSI @ 32KHz
   if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
   {
     Error_Handler();
@@ -1052,33 +1069,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
-void MY_SYSTICK_IRQHandler(void)
-{
-    //simple toggle
-    swSysTickEventFlag = swSysTickEventFlag ? 0 : 1;
-}
-
-// generic USART handler
-void USART1_IRQHandler(void)
-{
-  HAL_UART_IRQHandler(&huart1);
-}
-
-//C callback function to trap interupt for Blue <USER> button press
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-    if(GPIO_Pin == BUTTON_EXTI13_Pin)
-    {
-       logMsg(&huart1, "\n\r\nBlue Button Pressed \r\n");
-    }
-}
-
-void FMC_SW_IRQHandler(void)
-{
-    swInterruptFlag = 1;
-}
-
 
 /* USER CODE END 4 */
 
