@@ -77,7 +77,6 @@ WWDG_HandleTypeDef hwwdg;
 
 /* USER CODE BEGIN PV */
 
-
 int mySwInterruptFlag = 0;
 int mySysTickEventFlag = 0;
 int myTim3EventFlag = 0;
@@ -114,11 +113,7 @@ void USART1_IRQHandler(void)
   HAL_UART_IRQHandler(&huart1);
 }
 
-void FMC_SW_IRQHandler(void)
-{
-    mySwInterruptFlag = 1;
-}
-
+// logMsg - prints messages to the UART
 void logMsg(UART_HandleTypeDef *huart, char _out[])
 {
     //Use STM32L4xx_HAL_Driver for UART TX
@@ -139,12 +134,21 @@ uint8_t logGetMsg(UART_HandleTypeDef *huart)
 // myDelay1 method - IWDG safe
 void myDelay1(uint32_t val)
 {
-    TIM2->CR1 = 1;
-    TIM2->ARR = 32000;
+    //Confirmed all bits in TIM2 are initialized to zero.
+    //Only bits required as set are handled in the code below
+
+    //TIM2 (CR) Control Register Setup
+    //set CR[4] DIR = 1 for downcounter
+    TIM2->CR1 |= 1<<4;
+    //set CR[0] CEN = 1 for Counter enable
+    TIM2->CR1 |= 1<<0;
+    TIM2->PSC = 1;      //PSC_CLK = 80MHz/(PSC+1) = 40MHz
+
+    TIM2->ARR = 40000;
     TIM2->CCR1 = 1;
     while (val != 0)
     {
-        //wait for SR
+        //wait for SR[0] UIF = 1 Update Interrupt Pending
         while(!(TIM2-> SR & 1)) {}
 
         //placing the IWDG refresh here will force a WDT event if the timer is not configured correctly
@@ -152,16 +156,11 @@ void myDelay1(uint32_t val)
         HAL_IWDG_Refresh(&hiwdg);
 
         val --;
-        //clear the status bit
+        //clear SR[0] UIF = 0 No update occured
         TIM2->SR &= ~1;
     }
 }
 
-// called by SysTick_Handler()
-void mySysTick_IRQHandler(void)
-{
-    mySysTickEventFlag = 1;
-}
 
 // myDelay2 method - IWDG safe
 void myDelay2(uint32_t val)
@@ -185,6 +184,17 @@ void myDelay2(uint32_t val)
 
         val --;
     }
+}
+
+void FMC_SW_IRQHandler(void)
+{
+    mySwInterruptFlag = 1;
+}
+
+// called by SysTick_Handler()
+void mySysTick_IRQHandler(void)
+{
+    mySysTickEventFlag = 1;
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -237,7 +247,7 @@ int main(void)
   MX_GPIO_Init();
   MX_DFSDM1_Init();
   MX_I2C2_Init();
-  MX_IWDG_Init();
+//  MX_IWDG_Init();
   MX_QUADSPI_Init();
   MX_RTC_Init();
   MX_SPI3_Init();
@@ -364,6 +374,13 @@ int main(void)
                         NVIC->STIR = FMC_IRQn;
                         break;
             case('t'):  //Start timer 3
+                        //Prescaler drop the 80MHz clk to 40KHz
+                        //80MHz/(1999+1) = 40kHz
+                        htim3.Init.Prescaler = 1999;
+                        htim3.Init.CounterMode = TIM_COUNTERMODE_DOWN;
+                        //use the 40HKz clk to countdown 40K cycles for 1 second underflow
+                        htim3.Init.Period = 40000;
+                        HAL_TIM_Base_Init(&htim3);
                         logMsg(&huart1, "\r\nStarting Timer 3 Test\r\n");
                         HAL_TIM_Base_Start_IT(&htim3);
                         break;
@@ -799,7 +816,7 @@ static void MX_TIM3_Init(void)
   {
     Error_Handler();
   }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;    //Selected clock is LSI @ 32KHz
   if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
   {
     Error_Handler();
