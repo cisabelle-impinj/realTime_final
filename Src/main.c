@@ -247,7 +247,7 @@ int main(void)
   MX_GPIO_Init();
   MX_DFSDM1_Init();
   MX_I2C2_Init();
-//  MX_IWDG_Init();
+  MX_IWDG_Init();
   MX_QUADSPI_Init();
   MX_RTC_Init();
   MX_SPI3_Init();
@@ -309,14 +309,24 @@ int main(void)
           //test to see if the TIM3 interrupt flag has been triggered
           if(myTim3EventFlag)
           {
-              //increment
-              tim3Cntr++;
               //clear the flag
               myTim3EventFlag=0;
 
+              //throw away for first event
+              //enabling the interrupt causes an event that is not a timed event
+              //see test log for timing analysis.
+              if(tim3Cntr==0)
+              {
+                  logMsg(&huart1, "\r\nTotal timer3 enabled\r\n");
+                  tim3Cntr++;
+                  continue;
+              }
+
               sprintf(tempStr, "Total timer3 events counted = %d\r\n", tim3Cntr);
+              //increment counter
+              tim3Cntr++;
               logMsg(&huart1, tempStr);
-              if(tim3Cntr==10)
+              if(tim3Cntr>10)
               {
                   //Stop timer 3
                   HAL_TIM_Base_Stop_IT(&htim3);
@@ -355,17 +365,11 @@ int main(void)
       switch(tempChar[0])
       {
             case('g'):  //Toggle Green LED
-                        //First toggle GPIO at CN1pin1, on the IoT board
-                        //This is done so that I can observe the timing of myDelay2 using an O'Scope.
-                        HAL_GPIO_TogglePin(TIMER_TRACE_Port, TIMER_TRACE_Pin);
                         myDelay1(1000);
                         HAL_GPIO_TogglePin(GRN_LED_GPIO_Port, GRN_LED_Pin);
                         logMsg(&huart1, "Toggle Green LED \r\n");
                         break;
             case('b'):  //Toggle blue LED
-                        //First toggle GPIO at CN1pin1, on the IoT board
-                        //This is done so that I can observe the timing of myDelay2 using an O'Scope.
-                        HAL_GPIO_TogglePin(TIMER_TRACE_Port, TIMER_TRACE_Pin);
                         myDelay2(1000);
                         HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin);
                         logMsg(&huart1, "Toggle Blue LED \r\n");
@@ -386,10 +390,6 @@ int main(void)
                         break;
             case('w'):  //Enable 1 second delay to trigger the IWDG
                         logMsg(&huart1, "\r\nStarting IWDG Test\r\n");
-                        //First toggle GPIO at CN1pin1, on the IoT board
-                        //This is done so that I can observe the timing of the watchdog timeout using an O'Scope.
-                        HAL_GPIO_TogglePin(TIMER_TRACE_Port, TIMER_TRACE_Pin);
-                        //Now call the delay
                         HAL_Delay(1000);
                         break;
             default:    logMsg(&huart1, "\n\r\nunknown character received \r\n");
