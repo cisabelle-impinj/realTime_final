@@ -77,10 +77,12 @@ WWDG_HandleTypeDef hwwdg;
 
 /* USER CODE BEGIN PV */
 
-//global flag to
+
 int mySwInterruptFlag = 0;
 int mySysTickEventFlag = 0;
 int myTim3EventFlag = 0;
+int myRtcAlarmFlag = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -194,6 +196,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 }
 
+void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
+{
+    myRtcAlarmFlag = 1;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -232,7 +239,7 @@ int main(void)
   MX_I2C2_Init();
   MX_IWDG_Init();
   MX_QUADSPI_Init();
-//  MX_RTC_Init();
+  MX_RTC_Init();
   MX_SPI3_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
@@ -271,15 +278,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-      //test to see if the SW interrupt flag has been triggered
-      if(mySwInterruptFlag)
-      {
-          //print message
-          logMsg(&huart1, "\r\n>>> SW Interrupt Detected <<<\r\n\r\n");
-          //clear the flag
-          mySwInterruptFlag=0;
-      }
-
 
       //reprint the menu each time a character is processed
       logMsg(&huart1, "\n\r\n");
@@ -291,13 +289,14 @@ int main(void)
       logMsg(&huart1, "Enter t - Start timer3  \r\n");
       logMsg(&huart1, "Enter w - Enable a 1 second delay to trigger the WDT \r\n");
 
-      //nothing else to do so stall the outerloop until a char is input to the terminal
+      //stall the outerloop until a char is input to the terminal - IWDG safe
+      //process tim3, rtc & swInterrupt flags
       while(__HAL_UART_GET_FLAG(&huart1, UART_FLAG_RXNE)==0)
       {
           //pet the IWDG timer
           HAL_IWDG_Refresh(&hiwdg);
 
-          //test to see if the SW interrupt flag has been triggered
+          //test to see if the TIM3 interrupt flag has been triggered
           if(myTim3EventFlag)
           {
               //increment
@@ -315,6 +314,24 @@ int main(void)
                   tim3Cntr = 0;
                   logMsg(&huart1, "\r\nTimer 3 Test Complete\r\n");
               }
+          }
+
+          //test to see if the SW interrupt flag has been triggered
+          if(mySwInterruptFlag)
+          {
+              //print message
+              logMsg(&huart1, "\r\n>>> SW Interrupt Detected <<<\r\n\r\n");
+              //clear the flag
+              mySwInterruptFlag=0;
+          }
+
+          //test to see if the RTC interrupt flag has been triggered
+          if(myRtcAlarmFlag)
+          {
+              //print message
+              logMsg(&huart1, "\r\n>>> RTC alarm A detected <<<\r\n\r\n");
+              //clear the flag
+              myRtcAlarmFlag=0;
           }
       }
 
@@ -355,7 +372,7 @@ int main(void)
                         //First toggle GPIO at CN1pin1, on the IoT board
                         //This is done so that I can observe the timing of the watchdog timeout using an O'Scope.
                         HAL_GPIO_TogglePin(TIMER_TRACE_Port, TIMER_TRACE_Pin);
-                        //Now cal the delay
+                        //Now call the delay
                         HAL_Delay(1000);
                         break;
             default:    logMsg(&huart1, "\n\r\nunknown character received \r\n");
@@ -600,6 +617,10 @@ static void MX_RTC_Init(void)
 
   /* USER CODE END RTC_Init 0 */
 
+  RTC_TimeTypeDef sTime = {0};
+  RTC_DateTypeDef sDate = {0};
+  RTC_AlarmTypeDef sAlarm = {0};
+
   /* USER CODE BEGIN RTC_Init 1 */
 
   /* USER CODE END RTC_Init 1 */
@@ -614,6 +635,48 @@ static void MX_RTC_Init(void)
   hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
   hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
   if (HAL_RTC_Init(&hrtc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* USER CODE BEGIN Check_RTC_BKUP */
+    
+  /* USER CODE END Check_RTC_BKUP */
+
+  /** Initialize RTC and set the Time and Date 
+  */
+  sTime.Hours = 0x0;
+  sTime.Minutes = 0x0;
+  sTime.Seconds = 0x0;
+  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
+  sDate.Month = RTC_MONTH_JANUARY;
+  sDate.Date = 0x1;
+  sDate.Year = 0x0;
+
+  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Enable the Alarm A 
+  */
+  sAlarm.AlarmTime.Hours = 0x0;
+  sAlarm.AlarmTime.Minutes = 0x1;
+  sAlarm.AlarmTime.Seconds = 0x0;
+  sAlarm.AlarmTime.SubSeconds = 0x0;
+  sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
+  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
+  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
+  sAlarm.AlarmDateWeekDay = 0x1;
+  sAlarm.Alarm = RTC_ALARM_A;
+  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
   {
     Error_Handler();
   }
@@ -682,8 +745,8 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 1;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_DOWN;
+  htim2.Init.Prescaler = 0;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim2.Init.Period = 0;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -727,16 +790,16 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 1000;
-  htim3.Init.CounterMode = TIM_COUNTERMODE_DOWN;                //change default to count down
-  htim3.Init.Period = 32000;
+  htim3.Init.Prescaler = 0;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 0;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
   }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;    //Selected clock is LSI @ 32KHz
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
   if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
   {
     Error_Handler();
